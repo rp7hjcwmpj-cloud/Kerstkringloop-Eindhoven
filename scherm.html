@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Rooster · scherm</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎄</text></svg>">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-size: clamp(15px, 1.05vw, 22px);
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .bar {
+      background: var(--green);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: .8em 1.6em;
+      box-shadow: 0 3px 0 var(--gold);
+      z-index: 2;
+    }
+    .bar h1 { font-size: 1.9em; display: flex; align-items: center; gap: .4em; }
+    .bar .clock { text-align: right; }
+    .bar .clock b { display: block; font-size: 2.2em; line-height: 1; font-variant-numeric: tabular-nums; }
+    .bar .clock span { opacity: .85; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 22em;
+      min-height: 0;
+    }
+
+    /* ---- dagkeuze + dagrooster */
+
+    .schedule { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+
+    .days {
+      display: flex;
+      align-items: center;
+      gap: .5em;
+      padding: 1em 1.6em .6em;
+    }
+    .days .scroller {
+      display: flex;
+      gap: .5em;
+      overflow-x: auto;
+      scroll-behavior: smooth;
+      scrollbar-width: none;
+      flex: 1;
+      padding: .2em;
+    }
+    .days .scroller::-webkit-scrollbar { display: none; }
+    .daybtn {
+      flex: 0 0 auto;
+      border: 2px solid var(--line);
+      background: var(--surface);
+      border-radius: 14px;
+      padding: .55em 1em;
+      font: inherit;
+      text-align: center;
+      cursor: pointer;
+      min-width: 6.2em;
+      color: var(--ink);
+    }
+    .daybtn small { display: block; color: var(--muted); font-size: .78em; text-transform: capitalize; }
+    .daybtn b { font-size: 1.15em; }
+    .daybtn .dot { display: block; height: 6px; width: 6px; border-radius: 50%; margin: 4px auto 0; background: transparent; }
+    .daybtn.has .dot { background: var(--gold); }
+    .daybtn.active { background: var(--green); border-color: var(--green); color: #fff; }
+    .daybtn.active small { color: rgba(255, 255, 255, .85); }
+    .daybtn.active.has .dot { background: #fff; }
+    .arrow {
+      flex: 0 0 auto;
+      width: 2.6em; height: 2.6em;
+      border-radius: 50%;
+      border: 2px solid var(--line);
+      background: var(--surface);
+      font-size: 1.3em;
+      cursor: pointer;
+      color: var(--green-dark);
+    }
+
+    .daygrid {
+      overflow-y: auto;
+      padding: .6em 1.6em 1.6em;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(17em, 1fr));
+      align-content: start;
+      gap: 1em;
+    }
+    .daytitle { grid-column: 1 / -1; font-size: 1.5em; color: var(--green-dark); margin: .2em 0 0; }
+
+    .slot {
+      background: var(--surface);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 1em 1.1em 1.1em;
+      border-top: 6px solid var(--gold);
+      display: flex;
+      flex-direction: column;
+      gap: .5em;
+    }
+    .slot.now { border-top-color: var(--green); outline: 3px solid var(--green); }
+    .slot.past { opacity: .5; border-top-color: var(--line); }
+    .slot.full { border-top-color: var(--green); }
+    .slot header { display: flex; justify-content: space-between; align-items: baseline; gap: .5em; }
+    .slot .t { font-size: 1.45em; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .slot .lbl { color: var(--muted); }
+    .slot .tag { font-size: .78em; font-weight: 700; padding: .2em .7em; border-radius: 999px; background: var(--green); color: #fff; white-space: nowrap; }
+    .slot ul { list-style: none; margin: .2em 0 0; padding: 0; display: flex; flex-direction: column; gap: .35em; }
+    .slot li {
+      background: var(--green-soft);
+      color: var(--green-dark);
+      border-radius: 10px;
+      padding: .45em .7em;
+      font-weight: 650;
+      font-size: 1.05em;
+    }
+    .slot li.open { background: none; border: 2px dashed var(--line); color: var(--muted); font-weight: 500; }
+
+    .nothing { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 4em 1em; font-size: 1.2em; }
+    .nothing .big { font-size: 3em; display: block; }
+
+    /* ---- zijbalk */
+
+    aside {
+      background: var(--green-dark);
+      color: #fff;
+      padding: 1.4em;
+      display: flex;
+      flex-direction: column;
+      gap: 1.2em;
+      overflow-y: auto;
+    }
+    aside h2 { font-size: .85em; text-transform: uppercase; letter-spacing: .08em; color: #f3d98f; margin-bottom: .5em; }
+    .now-box .who { display: flex; flex-direction: column; gap: .4em; }
+    .now-box .person { background: rgba(255, 255, 255, .1); border-radius: 10px; padding: .55em .8em; font-size: 1.15em; font-weight: 650; }
+    .now-box .person small { display: block; font-weight: 400; opacity: .75; font-size: .75em; }
+    .now-box .none { opacity: .7; font-style: italic; }
+    .next-box p { margin: 0; }
+    .next-box .t { font-size: 1.3em; font-weight: 700; }
+    .next-box .names { opacity: .85; font-size: .95em; }
+
+    .qr-box {
+      margin-top: auto;
+      background: #fff;
+      color: var(--ink);
+      border-radius: 16px;
+      padding: 1em;
+      display: flex;
+      gap: 1em;
+      align-items: center;
+    }
+    .qr-box #qr { flex: 0 0 auto; width: 7em; height: 7em; }
+    .qr-box #qr img, .qr-box #qr canvas { width: 100% !important; height: 100% !important; }
+    .qr-box b { display: block; font-size: 1.1em; color: var(--green-dark); }
+    .qr-box span { font-size: .85em; color: var(--muted); }
+
+    .status { font-size: .75em; opacity: .6; }
+    .status.err { color: #ffb3ac; opacity: 1; }
+
+    @media (orientation: portrait) {
+      body { font-size: clamp(15px, 2vw, 24px); }
+      .layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      aside { flex-direction: row; flex-wrap: wrap; }
+      aside > section { flex: 1 1 14em; }
+      .qr-box { margin-top: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="bar">
+    <h1>🎄 <span class="shop-name">Kerstwinkel</span></h1>
+    <div class="clock"><b id="clock">--:--</b><span id="today"></span></div>
+  </header>
+
+  <div class="layout">
+    <section class="schedule">
+      <nav class="days">
+        <button class="arrow" id="prevDay" aria-label="Vorige dag">‹</button>
+        <div class="scroller" id="dayButtons"></div>
+        <button class="arrow" id="nextDay" aria-label="Volgende dag">›</button>
+      </nav>
+      <div class="daygrid" id="dayGrid"></div>
+    </section>
+
+    <aside>
+      <section class="now-box">
+        <h2>Nu aan het werk</h2>
+        <div class="who" id="nowList"></div>
+      </section>
+      <section class="next-box">
+        <h2>Hierna</h2>
+        <div id="nextInfo"></div>
+      </section>
+      <section class="qr-box">
+        <div id="qr"></div>
+        <div><b>Ook meehelpen?</b><span>Scan de code en meld je aan met je mobiel.</span></div>
+      </section>
+      <div class="status" id="status"></div>
+    </aside>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // Zonder deze bestanden blijft de pagina anders leeg
+    if (typeof CONFIG === 'undefined' || typeof rpc === 'undefined') {
+      document.body.innerHTML = '<main><div class="card" style="font-family:sans-serif;padding:20px">' +
+        '<h1>Bestanden ontbreken</h1><p>config.js, app.js en style.css moeten in dezelfde map staan als deze pagina.</p></div></main>';
+      throw new Error('config.js of app.js niet geladen');
+    }
+  </script>
+  <script>
+    const DAYS_AHEAD = 21;
+    const REFRESH_MS = 30_000;
+    const IDLE_MS = 90_000;
+
+    let shifts = [];
+    let selected = todayKey();
+    let lastOk = 0;
+    let idleTimer;
+
+    const $ = (sel) => document.querySelector(sel);
+
+    function tick() {
+      $('#clock').textContent = fmtTime.format(new Date());
+      $('#today').textContent = dayLabel(todayKey(), { relative: false });
+    }
+
+    async function load() {
+      try {
+        const from = new Date(Date.now() - 864e5);
+        const to = new Date(Date.now() + (DAYS_AHEAD + 1) * 864e5);
+        const data = await rpc('get_schedule', { p_from: from.toISOString(), p_to: to.toISOString() });
+        document.querySelectorAll('.shop-name').forEach((el) => (el.textContent = data.shop_name));
+        shifts = data.shifts;
+        lastOk = Date.now();
+        render();
+      } catch (e) {
+        console.error(e);
+      }
+      renderStatus();
+    }
+
+    function renderStatus() {
+      const el = $('#status');
+      if (!lastOk) {
+        el.textContent = 'Geen verbinding met het rooster…';
+        el.className = 'status err';
+      } else if (Date.now() - lastOk > 3 * REFRESH_MS) {
+        el.textContent = `Geen verbinding · laatst bijgewerkt ${fmtTime.format(new Date(lastOk))}`;
+        el.className = 'status err';
+      } else {
+        el.textContent = `Bijgewerkt ${fmtTime.format(new Date(lastOk))}`;
+        el.className = 'status';
+      }
+    }
+
+    function dayKeys() {
+      const t = todayKey();
+      return Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(t, i));
+    }
+
+    function render() {
+      const byDay = groupByDay(shifts);
+      const keys = dayKeys();
+      if (!keys.includes(selected)) selected = keys[0];
+
+      // dagknoppen
+      $('#dayButtons').innerHTML = keys.map((k, i) => {
+        const d = new Date(`${k}T12:00:00Z`);
+        const wd = i === 0 ? 'vandaag' : i === 1 ? 'morgen' : new Intl.DateTimeFormat('nl-NL', { timeZone: 'UTC', weekday: 'short' }).format(d);
+        const dm = new Intl.DateTimeFormat('nl-NL', { timeZone: 'UTC', day: 'numeric', month: 'short' }).format(d);
+        return `<button class="daybtn ${k === selected ? 'active' : ''} ${byDay.has(k) ? 'has' : ''}" data-day="${k}">
+                  <small>${wd}</small><b>${dm}</b><span class="dot"></span></button>`;
+      }).join('');
+      $('#dayButtons .active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+
+      // dagrooster
+      const now = Date.now();
+      const items = byDay.get(selected) || [];
+      let html = `<h2 class="daytitle">${esc(dayLabel(selected))}</h2>`;
+      if (!items.length) {
+        html += `<div class="nothing"><span class="big">❄️</span>Geen diensten op deze dag.</div>`;
+      }
+      for (const s of items) {
+        const start = new Date(s.starts_at).getTime();
+        const end = new Date(s.ends_at).getTime();
+        const state = end <= now ? 'past' : start <= now ? 'now' : '';
+        const full = s.people.length >= s.capacity;
+        const open = Math.max(0, s.capacity - s.people.length);
+        html += `
+          <article class="slot ${state} ${full ? 'full' : ''}">
+            <header><span class="t">${timeRange(s)}</span>${state === 'now' ? '<span class="tag">Nu bezig</span>' : ''}</header>
+            ${s.label ? `<div class="lbl">${esc(s.label)}</div>` : ''}
+            <ul>
+              ${s.people.map((p) => `<li>${esc(p.name)}</li>`).join('')}
+              ${state !== 'past' ? Array.from({ length: open }, () => '<li class="open">Nog vrij</li>').join('') : ''}
+            </ul>
+          </article>`;
+      }
+      $('#dayGrid').innerHTML = html;
+
+      // nu aan het werk
+      const current = shifts.filter((s) => new Date(s.starts_at) <= now && new Date(s.ends_at) > now);
+      const people = current.flatMap((s) => s.people.map((p) => ({ name: p.name, until: timeOf(s.ends_at), label: s.label })));
+      $('#nowList').innerHTML = people.length
+        ? people.map((p) => `<div class="person">${esc(p.name)}<small>tot ${p.until}${p.label ? ' · ' + esc(p.label) : ''}</small></div>`).join('')
+        : `<div class="none">${current.length ? 'Niemand ingeroosterd' : 'Er loopt nu geen dienst'}</div>`;
+
+      // volgende dienst
+      const next = shifts.find((s) => new Date(s.starts_at) > now);
+      $('#nextInfo').innerHTML = next
+        ? `<p class="t">${esc(dayKey(next.starts_at) === todayKey() ? '' : dayLabel(dayKey(next.starts_at), { short: true }) + ', ')}${timeRange(next)}</p>
+           <p class="names">${next.people.length ? next.people.map((p) => esc(p.name)).join(', ') : 'Nog niemand aangemeld'}${next.people.length < next.capacity ? ` · ${next.capacity - next.people.length} vrij` : ''}</p>`
+        : `<p class="names">Geen diensten gepland.</p>`;
+    }
+
+    function selectDay(key) {
+      selected = key;
+      render();
+      resetIdle();
+    }
+
+    function resetIdle() {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        selected = todayKey();
+        render();
+        $('#dayGrid').scrollTop = 0;
+      }, IDLE_MS);
+    }
+
+    $('#dayButtons').addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-day]');
+      if (b) selectDay(b.dataset.day);
+    });
+    $('#prevDay').addEventListener('click', () => {
+      const keys = dayKeys();
+      selectDay(keys[Math.max(0, keys.indexOf(selected) - 1)]);
+    });
+    $('#nextDay').addEventListener('click', () => {
+      const keys = dayKeys();
+      selectDay(keys[Math.min(keys.length - 1, keys.indexOf(selected) + 1)]);
+    });
+
+    // vegen tussen dagen
+    let touchX = null;
+    $('#dayGrid').addEventListener('touchstart', (e) => (touchX = e.touches[0].clientX), { passive: true });
+    $('#dayGrid').addEventListener('touchend', (e) => {
+      if (touchX === null) return;
+      const dx = e.changedTouches[0].clientX - touchX;
+      touchX = null;
+      if (Math.abs(dx) < 80) return;
+      (dx < 0 ? $('#nextDay') : $('#prevDay')).click();
+    });
+
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('pointerdown', resetIdle);
+
+    // QR-code naar de aanmeldpagina in dezelfde map
+    const signupUrl = new URL('index.html', location.href).href.replace(/index\.html$/, '');
+    if (window.QRCode) {
+      new QRCode($('#qr'), { text: signupUrl, width: 256, height: 256, colorDark: '#143f2b', colorLight: '#ffffff' });
+    } else {
+      $('#qr').hidden = true;
+    }
+
+    tick();
+    load();
+    setInterval(tick, 1000);
+    setInterval(load, REFRESH_MS);
+    setInterval(render, 60_000); // "nu bezig" bijwerken, ook zonder nieuwe data
+    // Elke 6 uur de pagina herladen, zodat updates van de site vanzelf binnenkomen
+    setTimeout(() => location.reload(), 6 * 3600_000);
+  </script>
+</body>
+</html>

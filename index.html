@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1d5a3d">
+  <title>Vrijwilligersrooster</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎄</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🎄 <span class="shop-name">Kerstwinkel</span></div>
+    <button class="link" id="logoutBtn" hidden>Uitloggen</button>
+  </header>
+
+  <main>
+    <!-- Niet ingelogd -->
+    <section id="authView" hidden>
+      <div class="intro">
+        <h1>Help je mee?</h1>
+        <p>Maak een account en kies wanneer je in de winkel staat.</p>
+      </div>
+
+      <div class="seg" role="tablist">
+        <button type="button" data-auth="register" class="active">Nieuw hier</button>
+        <button type="button" data-auth="login">Ik heb al een account</button>
+      </div>
+
+      <form id="registerForm" class="card" novalidate>
+        <div class="form-error" hidden></div>
+        <label class="field">
+          <span>Je naam</span>
+          <input type="text" name="name" autocomplete="name" maxlength="60" required placeholder="Bijv. Anna de Vries">
+          <small>Zo staat je naam op het rooster. Met deze naam log je ook in.</small>
+        </label>
+        <label class="field">
+          <span>Telefoonnummer</span>
+          <input type="tel" name="phone" autocomplete="tel" inputmode="tel" required placeholder="06 12345678">
+          <small>Alleen zichtbaar voor de organisatie.</small>
+        </label>
+        <div class="row">
+          <label class="field">
+            <span>Kies een pincode</span>
+            <input type="password" name="pin" class="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required placeholder="••••">
+          </label>
+          <label class="field">
+            <span>Herhaal pincode</span>
+            <input type="password" name="pin2" class="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required placeholder="••••">
+          </label>
+        </div>
+        <button class="btn block" type="submit">Account maken</button>
+      </form>
+
+      <form id="loginForm" class="card" novalidate hidden>
+        <div class="form-error" hidden></div>
+        <label class="field">
+          <span>Je naam</span>
+          <input type="text" name="name" autocomplete="username" maxlength="60" required>
+        </label>
+        <label class="field">
+          <span>Pincode</span>
+          <input type="password" name="pin" class="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="current-password" required placeholder="••••">
+        </label>
+        <button class="btn block" type="submit">Inloggen</button>
+        <p class="note">Pincode vergeten? Vraag de organisatie om een nieuwe.</p>
+      </form>
+    </section>
+
+    <!-- Ingelogd -->
+    <section id="appView" hidden>
+      <div class="intro">
+        <h1>Hoi <span id="meName"></span> 👋</h1>
+        <p>Tik op <strong>Aanmelden</strong> bij een dienst waarop je kunt helpen.</p>
+      </div>
+
+      <div class="seg" role="tablist">
+        <button type="button" data-view="all" class="active">Alle diensten</button>
+        <button type="button" data-view="mine">Mijn diensten <span id="mineCount"></span></button>
+      </div>
+
+      <label class="check" id="onlyOpenWrap">
+        <input type="checkbox" id="onlyOpen"> Alleen diensten met nog plek
+      </label>
+
+      <div id="list" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // Zonder deze bestanden blijft de pagina anders leeg
+    if (typeof CONFIG === 'undefined' || typeof rpc === 'undefined') {
+      document.body.innerHTML = '<main><div class="card" style="font-family:sans-serif;padding:20px">' +
+        '<h1>Bestanden ontbreken</h1><p>config.js, app.js en style.css moeten in dezelfde map staan als deze pagina.</p></div></main>';
+      throw new Error('config.js of app.js niet geladen');
+    }
+  </script>
+  <script>
+    const TOKEN_KEY = 'kw_token';
+    let token = store(localStorage, TOKEN_KEY);
+    let me = null;
+    let shifts = [];
+    let view = 'all';
+
+    const $ = (sel) => document.querySelector(sel);
+
+    // ---- account
+
+    function setSession(result) {
+      token = result.token;
+      me = result.volunteer;
+      store(localStorage, TOKEN_KEY, token);
+      showApp();
+    }
+
+    function clearSession() {
+      token = null;
+      me = null;
+      store(localStorage, TOKEN_KEY, null);
+      showAuth();
+    }
+
+    function showAuth() {
+      $('#appView').hidden = true;
+      $('#logoutBtn').hidden = true;
+      $('#authView').hidden = false;
+    }
+
+    function showApp() {
+      $('#authView').hidden = true;
+      $('#appView').hidden = false;
+      $('#logoutBtn').hidden = false;
+      $('#meName').textContent = me.name.split(' ')[0];
+      load();
+    }
+
+    document.querySelectorAll('[data-auth]').forEach((b) =>
+      b.addEventListener('click', () => {
+        document.querySelectorAll('[data-auth]').forEach((x) => x.classList.toggle('active', x === b));
+        $('#registerForm').hidden = b.dataset.auth !== 'register';
+        $('#loginForm').hidden = b.dataset.auth !== 'login';
+      }));
+
+    function formError(form, message) {
+      const box = form.querySelector('.form-error');
+      box.textContent = message || '';
+      box.hidden = !message;
+    }
+
+    async function submitWith(form, fn) {
+      const btn = form.querySelector('button[type=submit]');
+      formError(form, '');
+      btn.disabled = true;
+      try {
+        await fn();
+      } catch (e) {
+        formError(form, e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    $('#registerForm').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      const d = Object.fromEntries(new FormData(f));
+      if (!/^\d{4}$/.test(d.pin)) return formError(f, 'De pincode moet uit precies 4 cijfers bestaan.');
+      if (d.pin !== d.pin2) return formError(f, 'De twee pincodes zijn niet hetzelfde.');
+      submitWith(f, async () => {
+        const res = await rpc('register_volunteer', { p_name: d.name, p_phone: d.phone, p_pin: d.pin });
+        setSession(res);
+        toast('Welkom! Je account is aangemaakt.');
+      });
+    });
+
+    $('#loginForm').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      const d = Object.fromEntries(new FormData(f));
+      submitWith(f, async () => {
+        const res = await rpc('login_volunteer', { p_name: d.name, p_pin: d.pin });
+        if (!res.ok) throw new Error(res.error);
+        setSession(res);
+      });
+    });
+
+    $('#logoutBtn').addEventListener('click', async () => {
+      rpc('logout', { p_token: token }).catch(() => {});
+      clearSession();
+    });
+
+    // ---- rooster
+
+    async function load() {
+      try {
+        const from = new Date();
+        const to = new Date(Date.now() + 120 * 864e5);
+        const data = await rpc('get_schedule', { p_from: from.toISOString(), p_to: to.toISOString() });
+        document.querySelectorAll('.shop-name').forEach((el) => (el.textContent = data.shop_name));
+        shifts = data.shifts;
+        render();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    function isMine(s) {
+      return s.people.some((p) => p.id === me.id);
+    }
+
+    function render() {
+      const mine = shifts.filter(isMine);
+      $('#mineCount').textContent = mine.length ? `(${mine.length})` : '';
+      $('#onlyOpenWrap').hidden = view === 'mine';
+
+      let list = view === 'mine' ? mine : shifts;
+      if (view === 'all' && $('#onlyOpen').checked) {
+        list = list.filter((s) => isMine(s) || s.people.length < s.capacity);
+      }
+
+      if (!list.length) {
+        $('#list').innerHTML = view === 'mine'
+          ? `<div class="empty-state"><span class="big">🎁</span>Je hebt je nog niet aangemeld voor een dienst.</div>`
+          : `<div class="empty-state"><span class="big">❄️</span>Er staan (nog) geen diensten open.</div>`;
+        return;
+      }
+
+      const now = Date.now();
+      let html = '';
+      for (const [key, items] of groupByDay(list)) {
+        html += `<section class="day"><h2>${esc(dayLabel(key))}</h2>`;
+        for (const s of items) {
+          const mineHere = isMine(s);
+          const full = s.people.length >= s.capacity;
+          const started = new Date(s.starts_at).getTime() <= now;
+          const free = s.capacity - s.people.length;
+          let action;
+          if (mineHere) {
+            action = started
+              ? `<span class="cap mine">Je bent ingeroosterd</span>`
+              : `<button class="btn ghost small" data-act="out" data-id="${s.id}">Afmelden</button>`;
+          } else if (full) {
+            action = '';
+          } else {
+            action = `<button class="btn small" data-act="in" data-id="${s.id}">Aanmelden</button>`;
+          }
+          const capClass = mineHere ? 'mine' : full ? 'full' : '';
+          const capText = mineHere ? '✓ Jij komt' : full ? 'Vol' : `${free} ${free === 1 ? 'plek' : 'plekken'} vrij`;
+          const people = s.people.length
+            ? s.people.map((p) => (p.id === me.id ? '<strong>jij</strong>' : esc(p.name))).join(', ')
+            : '<span class="empty">Nog niemand aangemeld</span>';
+          html += `
+            <article class="shift ${mineHere ? 'mine' : ''} ${full ? 'full' : 'open'}">
+              <div class="time">${timeRange(s)}</div>
+              <div class="side"><span class="cap ${capClass}">${capText}</span>${action}</div>
+              <div class="label">${esc(s.label) || '&nbsp;'}</div>
+              <div class="people">👥 ${people}</div>
+            </article>`;
+        }
+        html += '</section>';
+      }
+      $('#list').innerHTML = html;
+    }
+
+    $('#list').addEventListener('click', async (ev) => {
+      const btn = ev.target.closest('button[data-act]');
+      if (!btn) return;
+      const shift = shifts.find((s) => s.id === btn.dataset.id);
+      const signingUp = btn.dataset.act === 'in';
+      if (!signingUp && !confirm(`Afmelden voor ${dayLabel(dayKey(shift.starts_at), { relative: false })}, ${timeRange(shift)}?`)) return;
+      btn.disabled = true;
+      try {
+        await rpc(signingUp ? 'sign_up' : 'sign_off', { p_token: token, p_shift_id: shift.id });
+        toast(signingUp ? 'Je bent aangemeld. Bedankt! 🎄' : 'Je bent afgemeld.');
+      } catch (e) {
+        if (e.hint === 'login') return clearSession();
+        toast(e.message, 'error');
+      }
+      load();
+    });
+
+    document.querySelectorAll('[data-view]').forEach((b) =>
+      b.addEventListener('click', () => {
+        view = b.dataset.view;
+        document.querySelectorAll('[data-view]').forEach((x) => x.classList.toggle('active', x === b));
+        render();
+      }));
+    $('#onlyOpen').addEventListener('change', render);
+
+    // Bij terugkeren naar het tabblad het rooster verversen
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && me) load();
+    });
+
+    // ---- start
+
+    (async () => {
+      if (!token) return showAuth();
+      try {
+        me = await rpc('get_me', { p_token: token });
+        showApp();
+      } catch (e) {
+        if (e.offline) {
+          toast(e.message, 'error');
+          return showAuth();
+        }
+        clearSession();
+      }
+    })();
+  </script>
+</body>
+</html>
