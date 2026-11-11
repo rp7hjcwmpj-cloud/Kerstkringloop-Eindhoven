@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Rooster · beheer</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎄</text></svg>">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .stat { color: var(--muted); font-size: .95rem; }
+    .stat b { color: var(--ink); }
+    .admin-shift { cursor: pointer; }
+    .admin-shift:hover { box-shadow: 0 0 0 2px var(--green-soft), var(--shadow); }
+    .grid-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .grid-form .span2 { grid-column: span 2; }
+    .grid-form .span4 { grid-column: 1 / -1; }
+    @media (max-width: 720px) { .grid-form { grid-template-columns: 1fr 1fr; } }
+    .preview { color: var(--muted); font-size: .9rem; align-self: center; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🎄 <span class="shop-name">Kerstwinkel</span> · beheer</div>
+    <button class="link" id="logoutBtn" hidden>Uitloggen</button>
+  </header>
+
+  <main class="wide">
+    <!-- inloggen -->
+    <section id="loginView" hidden>
+      <div class="intro"><h1>Beheer</h1><p>Voer de beheerderscode in.</p></div>
+      <form id="loginForm" class="card" style="max-width:420px" novalidate>
+        <div class="form-error" hidden></div>
+        <label class="field">
+          <span>Beheerderscode</span>
+          <input type="password" name="pin" class="pin" inputmode="numeric" autocomplete="current-password" required>
+        </label>
+        <button class="btn block" type="submit">Inloggen</button>
+      </form>
+    </section>
+
+    <section id="adminView" hidden>
+      <div class="seg" style="max-width:560px">
+        <button type="button" data-tab="shifts" class="active">Diensten</button>
+        <button type="button" data-tab="volunteers">Vrijwilligers</button>
+        <button type="button" data-tab="settings">Instellingen</button>
+      </div>
+
+      <!-- diensten -->
+      <div data-panel="shifts">
+        <form id="createForm" class="card" novalidate>
+          <h2 style="font-size:1.15rem;margin-bottom:14px">Diensten toevoegen</h2>
+          <div class="form-error" hidden></div>
+          <div class="grid-form">
+            <label class="field"><span>Vanaf datum</span><input type="date" name="from" required></label>
+            <label class="field"><span>Tot en met</span><input type="date" name="to"><small>Leeg = één dag</small></label>
+            <label class="field"><span>Begintijd</span><input type="time" name="start" required value="10:00"></label>
+            <label class="field"><span>Eindtijd</span><input type="time" name="end" required value="13:00"></label>
+            <label class="field span2"><span>Omschrijving (optioneel)</span><input type="text" name="label" maxlength="60" placeholder="Bijv. Kassa, Opbouwen, Ochtenddienst"></label>
+            <label class="field"><span>Aantal personen</span><input type="number" name="capacity" min="1" max="100" value="4" required></label>
+            <div class="field"><span>&nbsp;</span><button class="btn block" type="submit">Toevoegen</button></div>
+            <div class="field span4">
+              <span>Op deze dagen</span>
+              <div class="weekdays" id="weekdays"></div>
+            </div>
+          </div>
+          <p class="preview" id="createPreview"></p>
+        </form>
+
+        <div class="toolbar">
+          <h2>Rooster</h2>
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <label class="check"><input type="checkbox" id="showPast"> Ook voorbije diensten</label>
+            <button class="btn ghost small" id="exportShifts">Rooster als CSV</button>
+          </div>
+        </div>
+        <div id="shiftList"></div>
+      </div>
+
+      <!-- vrijwilligers -->
+      <div data-panel="volunteers" hidden>
+        <div class="toolbar">
+          <p class="stat" id="volStat"></p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="search" id="volSearch" placeholder="Zoeken…" style="width:220px">
+            <button class="btn ghost small" id="exportVols">Lijst als CSV</button>
+          </div>
+        </div>
+        <div class="card table-wrap">
+          <table>
+            <thead><tr><th>Naam</th><th>Telefoon</th><th>Diensten</th><th>Aangemeld op</th><th></th></tr></thead>
+            <tbody id="volRows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- instellingen -->
+      <div data-panel="settings" hidden>
+        <form id="settingsForm" class="card" style="max-width:520px" novalidate>
+          <div class="form-error" hidden></div>
+          <label class="field"><span>Naam van de winkel</span><input type="text" name="shop_name" maxlength="60" required></label>
+          <label class="field"><span>Maximaal aantal vrijwilligers</span><input type="number" name="max_volunteers" min="1" max="1000" required></label>
+          <label class="field">
+            <span>Nieuwe beheerderscode</span>
+            <input type="password" name="new_pin" inputmode="numeric" autocomplete="new-password" placeholder="Leeg laten = niet wijzigen">
+            <small>6 tot 12 cijfers.</small>
+          </label>
+          <button class="btn" type="submit">Opslaan</button>
+        </form>
+        <div class="card" style="max-width:520px;margin-top:16px">
+          <h2 style="font-size:1.05rem;margin-bottom:8px">Links</h2>
+          <p class="stat" style="margin:0 0 6px">Aanmelden (mobiel): <a id="linkSignup" target="_blank"></a></p>
+          <p class="stat" style="margin:0">Touchscreen: <a id="linkScreen" target="_blank"></a></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- dienst bewerken -->
+  <dialog id="shiftDialog">
+    <form id="shiftForm" method="dialog" novalidate>
+      <div class="dlg-head"><h2 style="font-size:1.15rem">Dienst bewerken</h2><button class="x" value="cancel" formnovalidate aria-label="Sluiten">×</button></div>
+      <div class="dlg-body">
+        <div class="form-error" hidden></div>
+        <div class="row">
+          <label class="field"><span>Datum</span><input type="date" name="date" required></label>
+          <label class="field"><span>Aantal personen</span><input type="number" name="capacity" min="1" max="100" required></label>
+        </div>
+        <div class="row">
+          <label class="field"><span>Begintijd</span><input type="time" name="start" required></label>
+          <label class="field"><span>Eindtijd</span><input type="time" name="end" required></label>
+        </div>
+        <label class="field"><span>Omschrijving</span><input type="text" name="label" maxlength="60"></label>
+        <div class="field">
+          <span>Ingeroosterd</span>
+          <div class="chips" id="dlgPeople"></div>
+        </div>
+        <div class="field" style="display:flex;gap:8px;margin-bottom:0">
+          <select id="dlgAddSelect"></select>
+          <button class="btn ghost" type="button" id="dlgAddBtn">Toevoegen</button>
+        </div>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn danger" type="button" id="dlgDelete">Dienst verwijderen</button>
+        <button class="btn" type="submit" value="save">Opslaan</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    const TOKEN_KEY = 'kw_admin_token';
+    const WEEKDAYS = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
+    let token = store(sessionStorage, TOKEN_KEY);
+    let shifts = [];
+    let volunteers = [];
+    let settings = {};
+    let editing = null;
+
+    const $ = (sel) => document.querySelector(sel);
+
+    function formError(form, message) {
+      const box = form.querySelector('.form-error');
+      box.textContent = message || '';
+      box.hidden = !message;
+    }
+
+    // Voert een beheeractie uit; bij een verlopen sessie terug naar inloggen.
+    async function act(fn, args = {}) {
+      try {
+        return await rpc(fn, { p_token: token, ...args });
+      } catch (e) {
+        if (e.hint === 'login') {
+          logout();
+          toast(e.message, 'error');
+        }
+        throw e;
+      }
+    }
+
+    // ---- inloggen
+
+    function logout() {
+      if (token) rpc('logout', { p_token: token }).catch(() => {});
+      token = null;
+      store(sessionStorage, TOKEN_KEY, null);
+      $('#adminView').hidden = true;
+      $('#logoutBtn').hidden = true;
+      $('#loginView').hidden = false;
+    }
+
+    $('#loginForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      formError(f, '');
+      try {
+        const res = await rpc('admin_login', { p_pin: f.pin.value });
+        if (!res.ok) return formError(f, res.error);
+        token = res.token;
+        store(sessionStorage, TOKEN_KEY, token);
+        f.reset();
+        start();
+      } catch (e) {
+        formError(f, e.message);
+      }
+    });
+    $('#logoutBtn').addEventListener('click', logout);
+
+    async function start() {
+      try {
+        await Promise.all([loadOverview(), loadShifts()]);
+        $('#loginView').hidden = true;
+        $('#adminView').hidden = false;
+        $('#logoutBtn').hidden = false;
+      } catch {
+        logout();
+      }
+    }
+
+    async function loadOverview() {
+      const data = await act('admin_overview');
+      settings = data.settings;
+      volunteers = data.volunteers;
+      document.querySelectorAll('.shop-name').forEach((el) => (el.textContent = settings.shop_name));
+      renderVolunteers();
+      renderSettings();
+    }
+
+    async function loadShifts() {
+      const past = $('#showPast').checked;
+      const from = new Date(Date.now() - (past ? 400 : 1) * 864e5);
+      const to = new Date(Date.now() + 365 * 864e5);
+      const data = await rpc('get_schedule', { p_from: from.toISOString(), p_to: to.toISOString() });
+      shifts = data.shifts;
+      renderShifts();
+    }
+
+    async function reloadAll() {
+      await Promise.all([loadOverview(), loadShifts()]).catch((e) => toast(e.message, 'error'));
+    }
+
+    // ---- tabs
+
+    document.querySelectorAll('[data-tab]').forEach((b) =>
+      b.addEventListener('click', () => {
+        document.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('active', x === b));
+        document.querySelectorAll('[data-panel]').forEach((p) => (p.hidden = p.dataset.panel !== b.dataset.tab));
+      }));
+
+    // ---- diensten toevoegen
+
+    $('#weekdays').innerHTML = WEEKDAYS.map((d, i) =>
+      `<label><input type="checkbox" value="${(i + 1) % 7}" checked> ${d}</label>`).join('');
+
+    function selectedDates() {
+      const f = $('#createForm');
+      const from = f.from.value;
+      const to = f.to.value || from;
+      if (!from || to < from) return [];
+      const days = new Set([...document.querySelectorAll('#weekdays input:checked')].map((i) => Number(i.value)));
+      const out = [];
+      for (let k = from; k <= to && out.length < 367; k = addDays(k, 1)) {
+        if (days.has(new Date(`${k}T12:00:00Z`).getUTCDay())) out.push(k);
+      }
+      return out;
+    }
+
+    function updatePreview() {
+      const n = selectedDates().length;
+      $('#createPreview').textContent = $('#createForm').from.value
+        ? (n ? `Er ${n === 1 ? 'wordt 1 dienst' : `worden ${n} diensten`} aangemaakt.` : 'Geen datums die overeenkomen met de gekozen dagen.')
+        : '';
+    }
+    $('#createForm').addEventListener('input', updatePreview);
+
+    $('#createForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      formError(f, '');
+      const dates = selectedDates();
+      if (!dates.length) return formError(f, 'Kies een datum (en controleer de dagen).');
+      if (!f.start.value || !f.end.value) return formError(f, 'Vul een begin- en eindtijd in.');
+      const btn = f.querySelector('button[type=submit]');
+      btn.disabled = true;
+      try {
+        const n = await act('admin_create_shifts', {
+          p_dates: dates, p_start: f.start.value, p_end: f.end.value,
+          p_label: f.label.value, p_capacity: Number(f.capacity.value),
+        });
+        toast(`${n} ${n === 1 ? 'dienst' : 'diensten'} toegevoegd.`);
+        f.to.value = '';
+        updatePreview();
+        await loadShifts();
+      } catch (e) {
+        formError(f, e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // ---- rooster
+
+    function renderShifts() {
+      if (!shifts.length) {
+        $('#shiftList').innerHTML = `<div class="empty-state"><span class="big">📅</span>Nog geen diensten. Voeg ze hierboven toe.</div>`;
+        return;
+      }
+      const now = Date.now();
+      let html = '';
+      for (const [key, items] of groupByDay(shifts)) {
+        html += `<section class="day"><h2>${esc(dayLabel(key))}</h2>`;
+        for (const s of items) {
+          const full = s.people.length >= s.capacity;
+          const past = new Date(s.ends_at).getTime() <= now;
+          html += `
+            <article class="shift admin-shift ${full ? 'mine' : 'open'}" data-id="${s.id}" style="${past ? 'opacity:.55' : ''}">
+              <div class="time">${timeRange(s)}</div>
+              <div class="side"><span class="cap ${full ? 'mine' : ''}">${s.people.length} / ${s.capacity}</span></div>
+              <div class="label">${esc(s.label) || '&nbsp;'}</div>
+              <div class="people">${s.people.length ? s.people.map((p) => esc(p.name)).join(', ') : '<span class="empty">Nog niemand</span>'}</div>
+            </article>`;
+        }
+        html += '</section>';
+      }
+      $('#shiftList').innerHTML = html;
+    }
+
+    $('#showPast').addEventListener('change', () => loadShifts().catch((e) => toast(e.message, 'error')));
+    $('#shiftList').addEventListener('click', (ev) => {
+      const el = ev.target.closest('[data-id]');
+      if (el) openShift(el.dataset.id);
+    });
+
+    // ---- dienst bewerken
+
+    function openShift(id) {
+      editing = shifts.find((s) => s.id === id);
+      const f = $('#shiftForm');
+      formError(f, '');
+      f.date.value = dayKey(editing.starts_at);
+      f.start.value = timeOf(editing.starts_at);
+      f.end.value = timeOf(editing.ends_at);
+      f.label.value = editing.label;
+      f.capacity.value = editing.capacity;
+      renderDialogPeople();
+      $('#shiftDialog').showModal();
+    }
+
+    function renderDialogPeople() {
+      const ids = new Set(editing.people.map((p) => p.id));
+      $('#dlgPeople').innerHTML = editing.people.length
+        ? editing.people.map((p) => `<span class="chip">${esc(p.name)}<button type="button" data-remove="${p.id}" aria-label="${esc(p.name)} verwijderen">×</button></span>`).join('')
+        : '<span class="stat">Nog niemand</span>';
+      const options = volunteers.filter((v) => !ids.has(v.id));
+      $('#dlgAddSelect').innerHTML = `<option value="">Vrijwilliger kiezen…</option>` +
+        options.map((v) => `<option value="${v.id}">${esc(v.name)}</option>`).join('');
+    }
+
+    async function refreshEditing() {
+      await reloadAll();
+      editing = shifts.find((s) => s.id === editing.id);
+      if (editing) renderDialogPeople();
+      else $('#shiftDialog').close();
+    }
+
+    $('#dlgPeople').addEventListener('click', async (ev) => {
+      const b = ev.target.closest('[data-remove]');
+      if (!b) return;
+      try {
+        await act('admin_remove_signup', { p_shift_id: editing.id, p_volunteer_id: b.dataset.remove });
+        await refreshEditing();
+      } catch (e) {
+        formError($('#shiftForm'), e.message);
+      }
+    });
+
+    $('#dlgAddBtn').addEventListener('click', async () => {
+      const id = $('#dlgAddSelect').value;
+      if (!id) return;
+      formError($('#shiftForm'), '');
+      try {
+        await act('admin_add_signup', { p_shift_id: editing.id, p_volunteer_id: id });
+        await refreshEditing();
+      } catch (e) {
+        formError($('#shiftForm'), e.message);
+      }
+    });
+
+    $('#shiftForm').addEventListener('submit', async (ev) => {
+      if (ev.submitter?.value !== 'save') return;
+      ev.preventDefault();
+      const f = ev.target;
+      try {
+        await act('admin_update_shift', {
+          p_id: editing.id, p_date: f.date.value, p_start: f.start.value, p_end: f.end.value,
+          p_label: f.label.value, p_capacity: Number(f.capacity.value),
+        });
+        $('#shiftDialog').close();
+        toast('Dienst opgeslagen.');
+        loadShifts();
+      } catch (e) {
+        formError(f, e.message);
+      }
+    });
+
+    $('#dlgDelete').addEventListener('click', async () => {
+      const n = editing.people.length;
+      if (!confirm(`Deze dienst verwijderen?${n ? ` ${n} ${n === 1 ? 'persoon staat' : 'personen staan'} ingeroosterd.` : ''}`)) return;
+      try {
+        await act('admin_delete_shift', { p_id: editing.id });
+        $('#shiftDialog').close();
+        toast('Dienst verwijderd.');
+        loadShifts();
+      } catch (e) {
+        formError($('#shiftForm'), e.message);
+      }
+    });
+
+    // ---- vrijwilligers
+
+    function renderVolunteers() {
+      $('#volStat').innerHTML = `<b>${volunteers.length}</b> van maximaal <b>${settings.max_volunteers}</b> vrijwilligers geregistreerd`;
+      const q = $('#volSearch').value.trim().toLowerCase();
+      const list = volunteers.filter((v) => !q || v.name.toLowerCase().includes(q) || v.phone.includes(q));
+      $('#volRows').innerHTML = list.length
+        ? list.map((v) => `
+            <tr>
+              <td><strong>${esc(v.name)}</strong></td>
+              <td><a href="tel:${esc(v.phone.replace(/[^0-9+]/g, ''))}">${esc(v.phone)}</a></td>
+              <td>${v.shift_count}</td>
+              <td>${esc(new Date(v.created_at).toLocaleDateString('nl-NL', { timeZone: TZ }))}</td>
+              <td class="actions">
+                <button class="btn ghost small" data-pin="${v.id}">Nieuwe pincode</button>
+                <button class="btn ghost small" data-del="${v.id}" style="color:var(--red)">Verwijderen</button>
+              </td>
+            </tr>`).join('')
+        : `<tr><td colspan="5" class="stat">Geen vrijwilligers gevonden.</td></tr>`;
+    }
+    $('#volSearch').addEventListener('input', renderVolunteers);
+
+    $('#volRows').addEventListener('click', async (ev) => {
+      const pinBtn = ev.target.closest('[data-pin]');
+      const delBtn = ev.target.closest('[data-del]');
+      const v = volunteers.find((x) => x.id === (pinBtn || delBtn)?.dataset[pinBtn ? 'pin' : 'del']);
+      if (!v) return;
+      try {
+        if (pinBtn) {
+          const pin = prompt(`Nieuwe pincode (4 cijfers) voor ${v.name}:`);
+          if (pin === null) return;
+          await act('admin_reset_pin', { p_id: v.id, p_pin: pin.trim() });
+          toast(`Pincode van ${v.name} gewijzigd.`);
+        } else {
+          if (!confirm(`${v.name} verwijderen? De persoon wordt ook uit ${v.shift_count} dienst(en) gehaald.`)) return;
+          await act('admin_delete_volunteer', { p_id: v.id });
+          toast(`${v.name} verwijderd.`);
+          await reloadAll();
+        }
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    });
+
+    // ---- CSV-export
+
+    function downloadCsv(filename, rows) {
+      const csv = rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    $('#exportVols').addEventListener('click', () =>
+      downloadCsv('vrijwilligers.csv', [
+        ['Naam', 'Telefoon', 'Aantal diensten', 'Aangemeld op'],
+        ...volunteers.map((v) => [v.name, v.phone, v.shift_count, new Date(v.created_at).toLocaleDateString('nl-NL', { timeZone: TZ })]),
+      ]));
+
+    $('#exportShifts').addEventListener('click', () =>
+      downloadCsv('rooster.csv', [
+        ['Datum', 'Begin', 'Eind', 'Omschrijving', 'Bezetting', 'Namen'],
+        ...shifts.map((s) => [dayKey(s.starts_at), timeOf(s.starts_at), timeOf(s.ends_at), s.label,
+          `${s.people.length}/${s.capacity}`, s.people.map((p) => p.name).join(', ')]),
+      ]));
+
+    // ---- instellingen
+
+    function renderSettings() {
+      const f = $('#settingsForm');
+      f.shop_name.value = settings.shop_name;
+      f.max_volunteers.value = settings.max_volunteers;
+    }
+
+    $('#settingsForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      formError(f, '');
+      try {
+        await act('admin_update_settings', {
+          p_shop_name: f.shop_name.value,
+          p_max_volunteers: Number(f.max_volunteers.value),
+          p_new_admin_pin: f.new_pin.value.trim() || null,
+        });
+        f.new_pin.value = '';
+        toast('Instellingen opgeslagen.');
+        loadOverview();
+      } catch (e) {
+        formError(f, e.message);
+      }
+    });
+
+    const base = new URL('./', location.href).href;
+    $('#linkSignup').href = $('#linkSignup').textContent = base;
+    $('#linkScreen').href = $('#linkScreen').textContent = base + 'scherm.html';
+
+    // ---- start
+
+    if (token) start();
+    else logout();
+  </script>
+</body>
+</html>
